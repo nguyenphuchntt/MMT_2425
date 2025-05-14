@@ -5,6 +5,7 @@
 #####################################################
 
 from router import Router
+from packet import Packet
 import json
 import copy
 
@@ -36,9 +37,13 @@ class DVrouter(Router):
         self.infinity = 16 # Cost đại diện cho không gửi được 
         
         # dict chứa thông tin về neighbors: port, addr, link_cost
+        #   Key: port_num
+        #   Value: {'neighbor_addr': neighbor_address, 'link_cost': cost_to_neighbor}
         self.ports_to_neighbors = {}
         
         # dict chứa thông tin về tất cả các router khác và cost 
+        #   Key: destination_addr
+        #   Value: {'cost': cost_to_destination, 'next_addr': next_router_addr, 'port': local_port_to_next_addr}
         self.dv = {
             self.addr: {'cost': 0, 'next_addr': self.addr, 'port': None}
         }
@@ -47,15 +52,18 @@ class DVrouter(Router):
         # dict(dict(
         # "neighbor_addr": {'A': 1, 'B': 2}
         # )) -> ví dụ
+        #   Key: neighbor_addr
+        #   Value: {destination_addr: cost_from_neighbor_to_destination}
         self.neighbor_dv = {}
         
         # dict lưu port vs addr
+        #   Key: neighbor_addr
+        #   Value: {destination_addr: cost_from_neighbor_to_destination}
         self.forwarding_table = {self.addr: None}
         
 
     def handle_packet(self, port, packet):
         """Process incoming packet."""
-        # TODO
         if packet.is_traceroute: # Nếu là gói dữ liệu
             # Hint: this is a normal data packet
             # If the forwarding table contains packet.dst_addr
@@ -63,8 +71,8 @@ class DVrouter(Router):
             if packet.dst_addr == self.addr: # Nếu đích là router hiện tại -> không cần xét nữa
                 return 
             
-            if packet.dst_addr in self.forwoarding_table and self.forwoarding_table[packet.dst_addr] is not None: # Nếu dst_addr có trong forwarding table -> gửi nó đi theo port trong forwarding table
-                output_port = self.forwoarding_table[packet.dst_addr]
+            if packet.dst_addr in self.forwarding_table and self.forwarding_table[packet.dst_addr] is not None: # Nếu dst_addr có trong forwarding table -> gửi nó đi theo port trong forwarding table
+                output_port = self.forwarding_table[packet.dst_addr]
                 self.send(output_port, packet)
                 
         else: # Nếu là gói tin router packet 
@@ -85,33 +93,28 @@ class DVrouter(Router):
                 self.neighbor_dv[src_addr] = receive_dv
                 self.update_dv()
             
-
     def handle_new_link(self, port, endpoint, cost):
         """Handle new link."""
-        # TODO
-        #   update the distance vector of this router
-        #   update the forwarding table
-        #   broadcast the distance vector of this router to neighbors
-        pass
 
     def handle_remove_link(self, port):
         """Handle removed link."""
-        # TODO
-        #   update the distance vector of this router
-        #   update the forwarding table
-        #   broadcast the distance vector of this router to neighbors
-        pass
+        if port in self.ports_to_neighbors:
+            remove_addr = self.ports_to_neighbors[port]['neighbor_addr']
+            del self.ports_to_neighbors[port]
+
+            if remove_addr in self.neighbor_dv:
+                del self.neighbor_dv[remove_addr]
+            
+            self.update_dv()
 
     def handle_time(self, time_ms):
         """Handle current time."""
         if time_ms - self.last_time >= self.heartbeat_time:
             self.last_time = time_ms
-            # TODO
             #   broadcast the distance vector of this router to neighbors
-            pass
+            self.broadcast_distance_vector()
         
     def update_dv(self):
-        
         current_dv = copy.deepcopy(self.dv)
         new_dv = {self.addr: {'cost': 0, 'next_hop_addr': self.addr, 'port': None}}
         
@@ -121,7 +124,7 @@ class DVrouter(Router):
         for neighbor_info in self.ports_to_neighbors.values(): # Lấy addr của chính các neighbors
             dest_addrs.add(neighbor_info['neighbor_addr'])
         
-        for neighbor_dv in self.neighbor_distance_vectors.values():
+        for neighbor_dv in self.neighbor_dv.values():
             dest_addrs.update(neighbor_dv.keys()) # Lấy được tất cả các addr của router khác là có liên kết với neighbors
         
         for dest_addr in dest_addrs:
@@ -132,6 +135,62 @@ class DVrouter(Router):
             min_cost = self.infinity
             min_cost_addr = None
             min_cost_port = None
+
+            for port, neighbor_info in self.ports_to_neighbors.items():
+                current_neighbor_addr = neighbor_info['neighbor_addr']
+                current_cost = neighbor_info['link_cost']
+                
+                if current_neighbor_addr in self.neighbor_dv and dest_addr in self.neighbor_dv[current_neighbor_addr]:
+                    current_cost += self.neighbor_dv[current_neighbor_addr][dest_addr]
+                elif current_neighbor_addr == dest_addr:
+                    pass
+                else:
+                    current_cost += self.infinity
+
+                if current_cost < min_cost:
+                    min_cost = current_cost
+                    min_cost_addr = current_neighbor_addr
+                    min_cost_port = port
+            
+            if min_cost < self.infinity:
+                new_dv[dest_addr] = {
+                    'cost': min_cost, 'next_addr': min_cost_addr, 'port': min_cost_port
+                }
+            elif dest_addr in current_dv:
+                new_dv[dest_addr] = {
+                    'cost': self.infinity, 'next_hop_addr': None, 'port': None
+                }
+        
+        if new_dv != current_dv:
+            self.distance_vector = new_dv
+            self.update_forwarding_table()
+            self.broadcast_distance_vector()
+            return True
+        return False
+
+    def update_forwarding_table(self):
+        self.forwarding_table.clear()
+        self.forwarding_table[self.addr] = None 
+        for dest, info in self.distance_vector.items():
+            if dest != self.addr and info['port'] is not None:
+                self.forwarding_table[dest] = info['port']
+
+    def broadcast_distance_vector(self):
+        if not self.ports_to_neighbors:
+            return
+
+        for port, neighbor_info in self.ports_to_neighbors.items():
+            neighbor_addr = neighbor_info['neighbor_addr']
+            dv_to_send = {}
+
+            for dest_addr, dest_info in self.distance_vector.items():
+                dv_to_send[dest_addr] = dest_info['cost']
+            packet_content = json.dumps(dv_to_send)
+            routing_packet = Packet(kind=Packet.ROUTING,
+                            src_addr=self.addr,
+                            dst_addr=neighbor_addr,
+                            content=packet_content)
+            self.send(port, routing_packet)
 
     def __repr__(self):
         """Representation for debugging in the network visualizer."""
