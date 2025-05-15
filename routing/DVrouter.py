@@ -32,7 +32,6 @@ class DVrouter(Router):
         Router.__init__(self, addr)  # Initialize base class - DO NOT REMOVE
         self.heartbeat_time = heartbeat_time
         self.last_time = 0
-        # TODO
         #   add your own class fields and initialization code here
         self.infinity = 16 # Cost đại diện cho không gửi được 
         
@@ -68,10 +67,10 @@ class DVrouter(Router):
             # Hint: this is a normal data packet
             # If the forwarding table contains packet.dst_addr
             #   send packet based on forwarding table, e.g., self.send(port, packet)
-            if packet.dst_addr == self.addr: # Nếu đích là router hiện tại -> không cần xét nữa
+            if packet.dst_addr == self.addr: # Nếu đích là router hiện tại -> đến đích rồi :))
                 return 
             
-            if packet.dst_addr in self.forwarding_table and self.forwarding_table[packet.dst_addr] is not None: # Nếu dst_addr có trong forwarding table -> gửi nó đi theo port trong forwarding table
+            if packet.dst_addr in self.forwarding_table and self.forwarding_table[packet.dst_addr] is not None: # Nếu dst_addr có trong forwarding table và giá trị đó không phải là None -> gửi nó đi theo port trong forwarding table
                 output_port = self.forwarding_table[packet.dst_addr]
                 self.send(output_port, packet)
                 
@@ -86,7 +85,7 @@ class DVrouter(Router):
             
             src_addr = packet.src_addr
             
-            # Kiểm tra xem router gửi gói tin có nằm trong keys của self.neighbor_dv khônng
+            # Kiểm tra xem neighbor router gửi gói tin có nằm trong keys của self.neighbor_dv khônng
             # Nếu đã có rồi thì kiểm tra tiếp xem nội dung có khác không 
             # Nếu khác thì tiến hành cập nhật qua hàm update_dv()
             if src_addr not in self.neighbor_dv or self.neighbor_dv[src_addr] != receive_dv:
@@ -99,8 +98,6 @@ class DVrouter(Router):
             'neighbor_addr': endpoint,
             'link_cost': cost
         }
-        if endpoint not in self.neighbor_dv:
-            self.neighbor_dv[endpoint] = {}
         self.update_dv()
         
 
@@ -141,13 +138,13 @@ class DVrouter(Router):
         
             # Khởi tạo
             min_cost = self.infinity
-            min_cost_addr = None
+            min_cost_neighbor_addr = None
             min_cost_port = None
 
             for port, neighbor_info in self.ports_to_neighbors.items(): # Duyệt qua các router kết nối trực tiếp với router hiện tại
                 current_neighbor_addr = neighbor_info['neighbor_addr']
-                current_cost = neighbor_info['link_cost']
-                
+                current_cost = neighbor_info['link_cost'] # Cost đến neighbor hiện tại
+
                 if current_neighbor_addr in self.neighbor_dv and dest_addr in self.neighbor_dv[current_neighbor_addr]: # Nếu dest_addr nằm trong dv của neighbor 
                     current_cost += self.neighbor_dv[current_neighbor_addr][dest_addr] # cost to neighbor + neighbor's cost to dest_addr
                 elif current_neighbor_addr == dest_addr: # Nếu neighbor đang được xét là dest_addr luôn thì không xét nữa
@@ -157,12 +154,12 @@ class DVrouter(Router):
 
                 if current_cost < min_cost:
                     min_cost = current_cost
-                    min_cost_addr = current_neighbor_addr
+                    min_cost_neighbor_addr = current_neighbor_addr
                     min_cost_port = port
             
-            if min_cost < self.infinity: # Có sự thay đổi 
+            if min_cost < self.infinity: # Có sự thay đổi và khác vô cùng 
                 new_dv[dest_addr] = {
-                    'cost': min_cost, 'next_addr': min_cost_addr, 'port': min_cost_port
+                    'cost': min_cost, 'next_addr': min_cost_neighbor_addr, 'port': min_cost_port
                 }
             elif dest_addr in current_dv: # Nếu đã có link từ router hiện tại tới dest_addr nhưng giờ thành +vc thì nghĩa là đường đi đấy thành vc/ không có đường đi
                 new_dv[dest_addr] = {
