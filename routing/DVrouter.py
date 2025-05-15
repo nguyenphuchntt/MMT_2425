@@ -95,15 +95,12 @@ class DVrouter(Router):
             
     def handle_new_link(self, port, endpoint, cost):
         """Handle new link."""
-        # Thêm neighbor mới vào bảng ports_to_neighbors
         self.ports_to_neighbors[port] = {
             'neighbor_addr': endpoint,
             'link_cost': cost
         }
-        # Nếu chưa có thông tin distance vector từ neighbor này thì khởi tạo rỗng
         if endpoint not in self.neighbor_dv:
             self.neighbor_dv[endpoint] = {}
-        # Cập nhật lại distance vector và forwarding table, đồng thời broadcast cho neighbors
         self.update_dv()
         
 
