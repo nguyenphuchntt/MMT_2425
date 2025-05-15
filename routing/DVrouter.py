@@ -186,7 +186,10 @@ class DVrouter(Router):
             dv_to_send = {} # dict lưu dv cần send 
 
             for dest_addr, dest_info in self.dv.items(): # Duyệt qua dv của router hiện tại
-                dv_to_send[dest_addr] = dest_info['cost']
+                if dest_info['next_addr'] == neighbor_addr: # Nếu A đi tới C qua B, và mình broadcast qua B => gửi cho B rằng cost từ A => C là vô cùng
+                    dv_to_send[dest_addr] = self.infinity
+                else: 
+                    dv_to_send[dest_addr] = dest_info['cost']
             packet_content = json.dumps(dv_to_send)
             routing_packet = Packet(kind=Packet.ROUTING,
                             src_addr=self.addr,
