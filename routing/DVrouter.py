@@ -95,6 +95,17 @@ class DVrouter(Router):
             
     def handle_new_link(self, port, endpoint, cost):
         """Handle new link."""
+        # Thêm neighbor mới vào bảng ports_to_neighbors
+        self.ports_to_neighbors[port] = {
+            'neighbor_addr': endpoint,
+            'link_cost': cost
+        }
+        # Nếu chưa có thông tin distance vector từ neighbor này thì khởi tạo rỗng
+        if endpoint not in self.neighbor_dv:
+            self.neighbor_dv[endpoint] = {}
+        # Cập nhật lại distance vector và forwarding table, đồng thời broadcast cho neighbors
+        self.update_dv()
+        
 
     def handle_remove_link(self, port):
         """Handle removed link."""
@@ -116,7 +127,7 @@ class DVrouter(Router):
         
     def update_dv(self):
         current_dv = copy.deepcopy(self.dv)
-        new_dv = {self.addr: {'cost': 0, 'next_hop_addr': self.addr, 'port': None}}
+        new_dv = {self.addr: {'cost': 0, 'next_addr': self.addr, 'port': None}}
         
         dest_addrs = set()
         dest_addrs.update(current_dv.keys()) # Lấy được tất cả các addr của router khác là key của self.dv
@@ -158,7 +169,7 @@ class DVrouter(Router):
                 }
             elif dest_addr in current_dv: # Nếu đã có link từ router hiện tại tới dest_addr nhưng giờ thành +vc thì nghĩa là đường đi đấy thành vc/ không có đường đi
                 new_dv[dest_addr] = {
-                    'cost': self.infinity, 'next_hop_addr': None, 'port': None
+                    'cost': self.infinity, 'next_addr': None, 'port': None
                 }
         
         if new_dv != current_dv:
